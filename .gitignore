@@ -1,0 +1,30 @@
+
+# Configuration files with credentials
+config.ini
+*.ini
+
+# Log files
+logs/
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Distribution files
+*.zip
+dist/
+build/
+
+# Temporary files
+temp/
+tmp/
