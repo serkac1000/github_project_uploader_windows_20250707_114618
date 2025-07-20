@@ -2,3 +2,15 @@ modules = ["python-3.12"]
 
 [nix]
 channel = "stable-24_05"
+
+[workflows]
+runButton = "Run GitHub Uploader"
+
+[[workflows.workflow]]
+name = "Run GitHub Uploader"
+author = 45282546
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python main.py"

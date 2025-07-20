@@ -13,6 +13,7 @@ import configparser
 import os
 import subprocess
 import base64
+import shutil
 
 from github_launcher import GitHubLauncher
 
@@ -123,14 +124,101 @@ class MainWindow:
                                        command=self.browse_project_folder)
         self.browse_button.grid(row=0, column=2, padx=(0, 10))
         
-        ttk.Label(upload_frame, text="Repository Name:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=(5, 0))
+        # Repository mode selection
+        ttk.Label(upload_frame, text="Repository Mode:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=(5, 0))
+        self.repo_mode_var = tk.StringVar(value="new")
+        repo_mode_frame = ttk.Frame(upload_frame)
+        repo_mode_frame.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(0, 10), pady=(5, 0))
+        
+        self.new_repo_radio = ttk.Radiobutton(repo_mode_frame, text="Create New Repository", 
+                                             variable=self.repo_mode_var, value="new",
+                                             command=self.on_repo_mode_changed)
+        self.new_repo_radio.grid(row=0, column=0, sticky=tk.W)
+        
+        self.existing_repo_radio = ttk.Radiobutton(repo_mode_frame, text="Use Existing Repository", 
+                                                  variable=self.repo_mode_var, value="existing",
+                                                  command=self.on_repo_mode_changed)
+        self.existing_repo_radio.grid(row=0, column=1, sticky=tk.W, padx=(20, 0))
+        
+        ttk.Label(upload_frame, text="Repository Name:").grid(row=2, column=0, sticky=tk.W, padx=(0, 10), pady=(5, 0))
         self.repo_name_var = tk.StringVar()
         self.repo_name_entry = ttk.Entry(upload_frame, textvariable=self.repo_name_var, width=50)
-        self.repo_name_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(0, 10), pady=(5, 0))
+        self.repo_name_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=(0, 10), pady=(5, 0))
+        
+        # Commit options for existing repositories
+        self.commit_frame = ttk.LabelFrame(upload_frame, text="Commit Options", padding="5")
+        self.commit_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(10, 5))
+        self.commit_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(self.commit_frame, text="Commit Mode:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        self.commit_mode_var = tk.StringVar(value="all")
+        commit_mode_frame = ttk.Frame(self.commit_frame)
+        commit_mode_frame.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
+        
+        self.all_files_radio = ttk.Radiobutton(commit_mode_frame, text="All Files", 
+                                              variable=self.commit_mode_var, value="all",
+                                              command=self.on_commit_mode_changed)
+        self.all_files_radio.grid(row=0, column=0, sticky=tk.W)
+        
+        self.changed_files_radio = ttk.Radiobutton(commit_mode_frame, text="Changed Files Only", 
+                                                  variable=self.commit_mode_var, value="changed",
+                                                  command=self.on_commit_mode_changed)
+        self.changed_files_radio.grid(row=0, column=1, sticky=tk.W, padx=(20, 0))
+        
+        self.selected_files_radio = ttk.Radiobutton(commit_mode_frame, text="Selected Files", 
+                                                   variable=self.commit_mode_var, value="selected",
+                                                   command=self.on_commit_mode_changed)
+        self.selected_files_radio.grid(row=0, column=2, sticky=tk.W, padx=(20, 0))
+        
+        # File selection area
+        self.file_selection_frame = ttk.Frame(self.commit_frame)
+        self.file_selection_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 0))
+        self.file_selection_frame.columnconfigure(0, weight=1)
+        
+        ttk.Label(self.file_selection_frame, text="Select files to commit:").grid(row=0, column=0, sticky=tk.W)
+        
+        # Scrollable file list
+        file_list_frame = ttk.Frame(self.file_selection_frame)
+        file_list_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(5, 0))
+        file_list_frame.columnconfigure(0, weight=1)
+        file_list_frame.rowconfigure(0, weight=1)
+        
+        self.file_listbox = tk.Listbox(file_list_frame, selectmode=tk.MULTIPLE, height=6)
+        scrollbar = ttk.Scrollbar(file_list_frame, orient=tk.VERTICAL, command=self.file_listbox.yview)
+        self.file_listbox.config(yscrollcommand=scrollbar.set)
+        
+        self.file_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # File list buttons
+        file_buttons_frame = ttk.Frame(self.file_selection_frame)
+        file_buttons_frame.grid(row=2, column=0, pady=(5, 0))
+        
+        self.refresh_files_button = ttk.Button(file_buttons_frame, text="Refresh Files", 
+                                              command=self.refresh_file_list)
+        self.refresh_files_button.grid(row=0, column=0, padx=(0, 5))
+        
+        self.select_all_button = ttk.Button(file_buttons_frame, text="Select All", 
+                                           command=self.select_all_files)
+        self.select_all_button.grid(row=0, column=1, padx=(0, 5))
+        
+        self.select_none_button = ttk.Button(file_buttons_frame, text="Select None", 
+                                            command=self.select_no_files)
+        self.select_none_button.grid(row=0, column=2)
+        
+        # Commit message
+        ttk.Label(self.commit_frame, text="Commit Message:").grid(row=3, column=0, sticky=(tk.W, tk.N), padx=(0, 10), pady=(10, 0))
+        self.commit_message_var = tk.StringVar(value="Update files")
+        self.commit_message_entry = tk.Text(self.commit_frame, height=3, width=50)
+        self.commit_message_entry.grid(row=3, column=1, columnspan=2, sticky=(tk.W, tk.E), padx=(0, 10), pady=(10, 0))
+        self.commit_message_entry.insert(1.0, "Update files")
         
         self.upload_button = ttk.Button(upload_frame, text="Upload to GitHub", 
                                        command=self.upload_to_github)
-        self.upload_button.grid(row=1, column=2, padx=(0, 10), pady=(5, 0))
+        self.upload_button.grid(row=4, column=2, padx=(0, 10), pady=(10, 0))
+        
+        # Initially hide commit options
+        self.commit_frame.grid_remove()
         
         # Progress and status section
         status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
@@ -225,6 +313,69 @@ class MainWindow:
             folder_name = os.path.basename(folder_path)
             if not self.repo_name_var.get():
                 self.repo_name_var.set(folder_name)
+            
+            # Refresh file list if in file selection mode
+            if self.repo_mode_var.get() == "existing":
+                self.refresh_file_list()
+    
+    def on_repo_mode_changed(self):
+        """Handle repository mode change."""
+        mode = self.repo_mode_var.get()
+        if mode == "existing":
+            self.commit_frame.grid()
+            self.upload_button.config(text="Commit to GitHub")
+            if self.project_path_var.get():
+                self.refresh_file_list()
+        else:
+            self.commit_frame.grid_remove()
+            self.upload_button.config(text="Upload to GitHub")
+    
+    def on_commit_mode_changed(self):
+        """Handle commit mode change."""
+        mode = self.commit_mode_var.get()
+        if mode == "selected":
+            self.file_selection_frame.grid()
+            if self.project_path_var.get():
+                self.refresh_file_list()
+        else:
+            self.file_selection_frame.grid_remove()
+    
+    def refresh_file_list(self):
+        """Refresh the file list for selection."""
+        project_path = self.project_path_var.get()
+        if not project_path or not os.path.exists(project_path):
+            return
+        
+        self.file_listbox.delete(0, tk.END)
+        
+        try:
+            # Get all files in the project directory
+            for root, dirs, files in os.walk(project_path):
+                # Skip .git directory
+                if '.git' in dirs:
+                    dirs.remove('.git')
+                
+                for file in files:
+                    relative_path = os.path.relpath(os.path.join(root, file), project_path)
+                    self.file_listbox.insert(tk.END, relative_path)
+            
+            self.log_message(f"Found {self.file_listbox.size()} files in project")
+            
+        except Exception as e:
+            self.log_message(f"Error reading project files: {str(e)}", "ERROR")
+    
+    def select_all_files(self):
+        """Select all files in the list."""
+        self.file_listbox.select_set(0, tk.END)
+    
+    def select_no_files(self):
+        """Deselect all files in the list."""
+        self.file_listbox.selection_clear(0, tk.END)
+    
+    def get_selected_files(self):
+        """Get list of selected files."""
+        selected_indices = self.file_listbox.curselection()
+        return [self.file_listbox.get(i) for i in selected_indices]
     
     def upload_to_github(self):
         """Upload project to GitHub."""
@@ -236,6 +387,7 @@ class MainWindow:
         password = self.password_var.get().strip()
         project_path = self.project_path_var.get().strip()
         repo_name = self.repo_name_var.get().strip()
+        repo_mode = self.repo_mode_var.get()
         
         if not username:
             messagebox.showerror("Error", "Please enter your GitHub username")
@@ -257,9 +409,19 @@ class MainWindow:
             messagebox.showerror("Error", "Selected project folder does not exist")
             return
         
+        # Additional validation for existing repository mode
+        if repo_mode == "existing":
+            commit_mode = self.commit_mode_var.get()
+            if commit_mode == "selected":
+                selected_files = self.get_selected_files()
+                if not selected_files:
+                    messagebox.showerror("Error", "Please select at least one file to commit")
+                    return
+        
         self.is_uploading = True
-        self.log_message(f"Starting upload to GitHub repository: {repo_name}")
-        self.update_status("Uploading to GitHub...")
+        action_text = "commit" if repo_mode == "existing" else "upload"
+        self.log_message(f"Starting {action_text} to GitHub repository: {repo_name}")
+        self.update_status(f"{action_text.capitalize()}ing to GitHub...")
         self.progress_bar.start()
         self.upload_button.config(state='disabled')
         
@@ -268,19 +430,32 @@ class MainWindow:
                 # Update GitHub launcher with credentials
                 self.launcher.update_auth(username, password)
                 
-                # Create repository on GitHub
-                self.root.after(0, lambda: self.update_progress("Creating repository on GitHub..."))
-                success, message = self.create_github_repository(repo_name)
-                
-                if not success:
-                    self.root.after(0, lambda: self.upload_failed(f"Failed to create repository: {message}"))
-                    return
-                
-                self.root.after(0, lambda: self.log_message(f"Repository created: {message}"))
-                
-                # Initialize git repository and push files
-                self.root.after(0, lambda: self.update_progress("Initializing git repository..."))
-                success, message = self.init_and_push_repository(project_path, username, repo_name)
+                if repo_mode == "new":
+                    # Create repository on GitHub
+                    self.root.after(0, lambda: self.update_progress("Creating repository on GitHub..."))
+                    success, message = self.create_github_repository(repo_name)
+                    
+                    if not success:
+                        self.root.after(0, lambda: self.upload_failed(f"Failed to create repository: {message}"))
+                        return
+                    
+                    self.root.after(0, lambda: self.log_message(f"Repository created: {message}"))
+                    
+                    # Initialize git repository and push files
+                    self.root.after(0, lambda: self.update_progress("Initializing git repository..."))
+                    success, message = self.init_and_push_repository(project_path, username, repo_name)
+                else:
+                    # Check if repository exists
+                    self.root.after(0, lambda: self.update_progress("Checking repository..."))
+                    success, message = self.check_repository_exists(username, repo_name)
+                    
+                    if not success:
+                        self.root.after(0, lambda: self.upload_failed(f"Repository check failed: {message}"))
+                        return
+                    
+                    # Commit to existing repository
+                    self.root.after(0, lambda: self.update_progress("Committing changes..."))
+                    success, message = self.commit_to_existing_repository(project_path, username, repo_name)
                 
                 if success:
                     self.root.after(0, lambda: self.upload_succeeded(message))
@@ -288,7 +463,7 @@ class MainWindow:
                     self.root.after(0, lambda: self.upload_failed(message))
                     
             except Exception as e:
-                self.root.after(0, lambda: self.upload_failed(f"Upload error: {str(e)}"))
+                self.root.after(0, lambda: self.upload_failed(f"{action_text.capitalize()} error: {str(e)}"))
         
         threading.Thread(target=upload_thread, daemon=True).start()
     
@@ -460,6 +635,129 @@ __pycache__/
             return False, "Git operation timed out. This might be due to network issues."
         except Exception as e:
             return False, f"Error during git operations: {str(e)}"
+    
+    def check_repository_exists(self, username, repo_name):
+        """Check if repository exists on GitHub."""
+        try:
+            api_url = f"{self.launcher.api_base_url}/repos/{username}/{repo_name}"
+            response = self.launcher.session.get(api_url, timeout=10)
+            
+            if response.status_code == 200:
+                return True, "Repository exists and accessible"
+            elif response.status_code == 404:
+                return False, f"Repository '{repo_name}' not found in {username}'s account"
+            elif response.status_code == 401:
+                return False, "Authentication failed - check your Personal Access Token"
+            else:
+                return False, f"GitHub API error: {response.status_code}"
+                
+        except Exception as e:
+            return False, f"Error checking repository: {str(e)}"
+    
+    def commit_to_existing_repository(self, project_path, username, repo_name):
+        """Commit changes to existing repository."""
+        try:
+            # Find Git executable
+            git_cmd = self.find_git_executable()
+            if not git_cmd:
+                return False, "Git is not found. Please install Git from git-scm.com or check if it's in your PATH."
+            
+            # Change to project directory
+            original_dir = os.getcwd()
+            os.chdir(project_path)
+            
+            try:
+                # Check if it's already a git repository
+                if not os.path.exists('.git'):
+                    # Clone the repository first
+                    self.log_message("Directory is not a git repository. Cloning from GitHub...")
+                    token = self.password_var.get()
+                    clone_url = f"https://{username}:{token}@github.com/{username}/{repo_name}.git"
+                    
+                    # Create a temporary directory to clone into
+                    temp_dir = tempfile.mkdtemp()
+                    result = subprocess.run([git_cmd, 'clone', clone_url, temp_dir], 
+                                          capture_output=True, text=True, timeout=60)
+                    
+                    if result.returncode != 0:
+                        return False, f"Failed to clone repository: {result.stderr}"
+                    
+                    # Copy .git directory to project path
+                    git_source = os.path.join(temp_dir, '.git')
+                    git_dest = os.path.join(project_path, '.git')
+                    shutil.copytree(git_source, git_dest)
+                    
+                    # Clean up temp directory
+                    shutil.rmtree(temp_dir)
+                    self.log_message("Repository cloned and git initialized")
+                
+                # Configure git user (required for commits)
+                subprocess.run([git_cmd, 'config', 'user.name', username], check=True, capture_output=True)
+                subprocess.run([git_cmd, 'config', 'user.email', f'{username}@github.com'], check=True, capture_output=True)
+                
+                # Handle different commit modes
+                commit_mode = self.commit_mode_var.get()
+                
+                if commit_mode == "all":
+                    # Add all files
+                    result = subprocess.run([git_cmd, 'add', '.'], check=True, capture_output=True, text=True)
+                    self.log_message("All files added to git")
+                
+                elif commit_mode == "changed":
+                    # Add only changed files
+                    result = subprocess.run([git_cmd, 'add', '-u'], check=True, capture_output=True, text=True)
+                    self.log_message("Changed files added to git")
+                
+                elif commit_mode == "selected":
+                    # Add only selected files
+                    selected_files = self.get_selected_files()
+                    for file_path in selected_files:
+                        result = subprocess.run([git_cmd, 'add', file_path], check=True, capture_output=True, text=True)
+                    self.log_message(f"Selected files added to git: {', '.join(selected_files)}")
+                
+                # Check if there are any changes to commit
+                result = subprocess.run([git_cmd, 'status', '--porcelain'], capture_output=True, text=True)
+                if not result.stdout.strip():
+                    return False, "No changes found to commit"
+                
+                # Get commit message
+                commit_message = self.commit_message_entry.get(1.0, tk.END).strip()
+                if not commit_message:
+                    commit_message = "Update files"
+                
+                # Commit changes
+                result = subprocess.run([git_cmd, 'commit', '-m', commit_message], 
+                                      check=True, capture_output=True, text=True)
+                self.log_message(f"Changes committed with message: {commit_message}")
+                
+                # Push to GitHub
+                self.log_message("Pushing changes to GitHub...")
+                env = os.environ.copy()
+                env['GIT_TERMINAL_PROMPT'] = '0'
+                
+                result = subprocess.run([git_cmd, 'push'], 
+                                      capture_output=True, text=True, timeout=60, env=env)
+                
+                if result.returncode != 0:
+                    error_output = result.stderr or result.stdout
+                    self.log_message(f"Push failed with error: {error_output}", "ERROR")
+                    return False, f"Git push failed: {error_output}"
+                
+                self.log_message("Successfully pushed changes to GitHub")
+                return True, f"Changes successfully committed to https://github.com/{username}/{repo_name}"
+                
+            finally:
+                os.chdir(original_dir)
+                
+        except subprocess.CalledProcessError as e:
+            error_output = e.stderr if hasattr(e, 'stderr') and e.stderr else str(e)
+            self.log_message(f"Git command failed: {error_output}", "ERROR")
+            return False, f"Git operation failed: {error_output}"
+            
+        except subprocess.TimeoutExpired:
+            return False, "Git operation timed out"
+        except Exception as e:
+            return False, f"Error during commit operation: {str(e)}"
     
     def upload_succeeded(self, message):
         """Handle successful upload."""
